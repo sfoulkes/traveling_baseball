@@ -64,7 +64,7 @@ def build_distance_matrix():
     return distances
 
 def load_schedules():
-    """ do something """
+    """ CSV stuff """
     schedule_df = pandas.DataFrame({'team': [], 'date': []})
 
     for team in TEAMS:
@@ -81,7 +81,7 @@ def load_schedules():
     return schedule_df
 
 def build_trips(schedule_df):
-    """ do something """
+    """ Build up all the possible trips. """
     trips = collections.defaultdict(list)
 
     start_date = datetime.datetime.utcnow()
@@ -109,7 +109,7 @@ def build_trips(schedule_df):
     return trips
 
 def trip_distance(trip, distance_matrix):
-    """ do something """
+    """ Calculate total distance traveled for the given trip.  """
     trip_hops = [x for x in trip if x is not None]
     hops = [(trip_hops[x-1], trip_hops[x]) 
             for x in range(1, len(trip_hops))]
@@ -117,11 +117,12 @@ def trip_distance(trip, distance_matrix):
     return distance
 
 def score_trips(trips, distance_matrix):
-    """ do something """
-    best_trip = None
-    avg_distance = 0
-
+    """ Iterate over all the trip dates and find the trip with the
+    min distance. """
     for trip_date in trips:
+        best_trip = None
+        avg_distance = 0
+
         for trip in trips[trip_date]:
             if trip.count(None) > 0:
                 continue
@@ -144,14 +145,6 @@ def main():
     trips = build_trips(schedule_df)
     score_trips(trips, distance_matrix)
 
-    import pdb; pdb.set_trace()
-
-    # load all data
-    # Find the earliest day (today)
-    # Find the latest day (end of seasion)
-    # Iterate over intervals, trip_length_days
-    #    Find all the games in that window
-    #    Iterate over all possible trips in that window
 
 if __name__ == '__main__':
     main()
