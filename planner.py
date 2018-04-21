@@ -11,15 +11,11 @@ from sys import stderr
 import pandas
 import requests
 from dateutil.parser import parse as dateutil_parse
-import pytz
-from tzlocal import get_localzone
 
 
 START_WEEKDAY = [3]
 TRIP_LENGTH_DAYS = 5
 GOOGLE_DISTANCE_URL = 'https://maps.googleapis.com/maps/api/distancematrix/json?origins={origin}&destinations={destination}&key={api_key}'
-EASTERN_TZ = pytz.timezone('US/Eastern')
-LOCAL_TZ = get_localzone()
 
 MlbTeam = collections.namedtuple('Team', ['name', 'schedule', 'address'])
 TEAMS = [
@@ -70,17 +66,6 @@ def build_distance_matrix():
 
     return distances
 
-def convert_time(row):
-    date = row['date']
-    time_ = row['START TIME ET'].to_pydatetime()
-    if time_.minute != time_.minute:
-        return
-
-    time_ = EASTERN_TZ.localize(time_)
-
-    row['date'] = date.replace(minute=time_.minute, hour=time_.hour,
-                               tzinfo=time_.tzinfo)
-
 def load_schedules():
     """ CSV stuff """
     schedule_df = pandas.DataFrame({'team': [], 'date': []})
@@ -89,7 +74,7 @@ def load_schedules():
     for team in TEAMS:
         schedule_path = os.path.join('schedules', team.schedule)
         team_schedule_df = pandas.read_csv(
-            schedule_path, parse_dates=['START DATE', 'START TIME ET'])
+            schedule_path, parse_dates=['START DATE'])
         schedule_dict[team.name] = team_schedule_df
         team_schedule_df['team'] = team.name
         team_schedule_df.rename(
@@ -168,15 +153,8 @@ class DateFinder(object):
         # Default latest date to be one day after the earliest date
         schedule = self.schedules[team]
         # TODO this is slow and dumb
-        for i, date in enumerate(schedule['date']):
+        for date in schedule['date']:
             date = date.to_pydatetime()
-            time_ = schedule.iloc[i]['START TIME ET'].to_pydatetime()
-            if time_.minute != time_.minute:
-                continue
-            time_ = EASTERN_TZ.localize(time_)
-            date = date.replace(minute=time_.minute, hour=time_.hour,
-                                tzinfo=time_.tzinfo)
-
             if latest is None:
                 if earliest <= date:
                     return date
@@ -205,6 +183,8 @@ class DateFinder(object):
             except ValueError as e:
                 if start_date is None:
                     raise
+                # print("Errored out with start date of {}. Dates collected: {}"
+                #       .format(start_date, dates))
                 return self.find_dates(start_date + datetime.timedelta(days=1), order)
         return start_date, dates
 
@@ -283,7 +263,7 @@ def main():
 
     # Generate trips for all orderings we determined.
     trips = {
-        tuple(o): finder.find_trips(LOCAL_TZ.localize(args.earliest_date), o)
+        tuple(o): finder.find_trips(args.earliest_date, o)
         for o in orderings
     }
 
@@ -297,7 +277,9 @@ def main():
             for date in dates:
                 trip_count += 1
                 print({t: d.strftime("%A, %m/%d") for t, d in date.items()})
-                trip_rows.append([date.get(t.name) for t in TEAMS])
+                trip_rows.append([None if t.name not in date
+                                  else date[t.name].strftime("%A, %m/%d")
+                                  for t in TEAMS])
             print("\n")
 
     trip_rows.sort(key=lambda r: min([d for d in r if d is not None]))
