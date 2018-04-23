@@ -145,6 +145,9 @@ def score_trips(trips, distance_matrix):
         if best_trip:
             print('{} {}'.format(trip_date, best_trip), file=stderr)
 
+class NoDatesSatisfyRequirements(Exception):
+    pass
+
 class DateFinder(object):
     def __init__(self, schedules):
         self.schedules = schedules
@@ -153,20 +156,24 @@ class DateFinder(object):
         # Default latest date to be one day after the earliest date
         schedule = self.schedules[team]
         # TODO this is slow and dumb
-        for date in schedule['date']:
+        for idx, date in enumerate(schedule['date']):
             date = date.to_pydatetime()
-            if latest is None:
-                if earliest <= date:
-                    return date
-            else:
-                if earliest <= date <= latest:
-                    return date
+            if latest is None and earliest <= date:
+                break
+            elif earliest <= date <= latest:
+                break
         else:
             raise ValueError("Couldn't find a date from {} to {} for the {}"
                              .format(earliest, latest, team))
 
-    def find_dates(self, earliest, order):
-        dates = {}
+        opponent = schedule.iloc[idx]['SUBJECT'].split(' at ')[0]
+        return {
+            'date': date,
+            'opponent': opponent
+        }
+
+    def find_events(self, earliest, order):
+        events = {}
         prev_date = None
         start_date = None
         for team in order:
@@ -176,28 +183,35 @@ class DateFinder(object):
             else:
                 latest = None
             try:
-                prev_date = self.find_date(team, earliest, latest)
-                dates[team] = prev_date
+                event = self.find_date(team, earliest, latest)
+                prev_date = event['date']
+                events[team] = event
                 if start_date is None:
                     start_date = prev_date
             except ValueError as e:
+                # This means we couldn't find a schedule with all of the teams in order.
                 if start_date is None:
-                    raise
-                # print("Errored out with start date of {}. Dates collected: {}"
-                #       .format(start_date, dates))
-                return self.find_dates(start_date + datetime.timedelta(days=1), order)
-        return start_date, dates
+                    # This means we couldn't find any events at all,
+                    # which means we exhausted all of the events. Raise
+                    # the error.
+                    raise NoDatesSatisfyRequirements()
+                # Otherwise, keep looking beginning with the next day.
+                else:
+                    tomorrow = start_date + datetime.timedelta(days=1)
+                    return self.find_events(tomorrow, order)
+
+        return start_date, events
 
     def find_trips(self, earliest, order):
-        all_dates = []
+        all_events = []
         while True:
             try:
-                start_date, dates = self.find_dates(earliest, order)
-                all_dates.append(dates)
+                start_date, events = self.find_events(earliest, order)
+                all_events.append(events)
                 earliest = start_date + datetime.timedelta(days=1)
-            except ValueError:
+            except NoDatesSatisfyRequirements:
                 break
-        return all_dates
+        return all_events
 
 def sublists(items, length):
     # produce all possible sublists at this length which preserve ordering
@@ -213,7 +227,6 @@ def sublists(items, length):
 
     # Choose an element, recur on all sublists of the remaining list at length-1.
     results = []
-    # import pdb; pdb.set_trace()
     for i in range((len(items) - length) + 1):
         item = items[i]
         sublists_ = sublists(items[i+1:], length - 1)
@@ -270,15 +283,14 @@ def main():
     trip_rows = []
 
     # Display all of the trips.
-    trip_count = 0
-    for order, dates in trips.items():
-        if dates:
+    for order, events in trips.items():
+        if events:
             print("Dates for {}:".format(" -> ".join(order)))
-            for date in dates:
-                trip_count += 1
-                print({t: d.strftime("%A, %m/%d") for t, d in date.items()})
-                trip_rows.append([None if t.name not in date
-                                  else date[t.name].strftime("%A, %m/%d")
+            for event_set in events:
+                pretty = {t: "{}, {}".format(e['opponent'], e['date'].strftime("%A %m/%d"))
+                          for t, e in event_set.items()}
+                print(pretty)
+                trip_rows.append([None if t.name not in event_set else pretty[t.name]
                                   for t in TEAMS])
             print("\n")
 
@@ -295,7 +307,7 @@ def main():
             f.write(sio.getvalue())
         print("Wrote CSV to {}".format(args.dump_csv))
 
-    print("Generated {} trips".format(trip_count))
+    print("Generated {} trips".format(len(trip_rows)))
 
 if __name__ == '__main__':
     main()
