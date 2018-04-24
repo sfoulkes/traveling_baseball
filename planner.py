@@ -7,6 +7,7 @@ import json
 import os
 import time
 from sys import stderr
+from teams import TEAMS
 
 import pandas
 import requests
@@ -16,16 +17,6 @@ from dateutil.parser import parse as dateutil_parse
 START_WEEKDAY = [3]
 TRIP_LENGTH_DAYS = 5
 GOOGLE_DISTANCE_URL = 'https://maps.googleapis.com/maps/api/distancematrix/json?origins={origin}&destinations={destination}&key={api_key}'
-
-MlbTeam = collections.namedtuple('Team', ['name', 'schedule', 'address'])
-TEAMS = [
-    MlbTeam('Red Sox', 'redsox.csv', '4 Yawkey Way Boston, MA 02215'),
-    MlbTeam('Yankees', 'yankees.csv', 'One East 161st Street Bronx, NY 10451'),
-    MlbTeam('Mets', 'mets.csv', '120-01 Roosevelt Avenue Corona, NY 11368'),
-    MlbTeam('Phillies', 'phillies.csv', 'One Citizens Bank Way Philadelphia, PA 19148'),
-    MlbTeam('Orioles', 'orioles.csv', '333 West Camden Street Baltimore, MD 21201'),
-    MlbTeam('Nationals', 'nationals.csv', '1500 South Capitol Street, SE Washington, DC 20003-1507'),
-]
 
 # Too far:
 #  MlbTeam('Pirates', 'pirates.csv', '115 Federal Street Pittsburgh, PA 15212'),
@@ -72,7 +63,13 @@ def load_schedules():
     schedule_dict = {}
 
     for team in TEAMS:
-        schedule_path = os.path.join('schedules', team.schedule)
+        schedule_path = os.path.join(
+            'schedules',
+            team.name.replace(' ', '').lower() + '.csv'
+        )
+        if not os.path.exists(schedule_path):
+            print("No schedule for {}".format(team))
+            continue
         team_schedule_df = pandas.read_csv(
             schedule_path, parse_dates=['START DATE'])
         schedule_dict[team.name] = team_schedule_df
@@ -236,8 +233,9 @@ def sublists(items, length):
 
 def get_args():
     parser = ArgumentParser()
-    parser.add_argument("--min-games", type=int, default=4)
-    parser.add_argument("--max-games", type=int, default=5)
+    parser.add_argument("teams", nargs="+")
+    parser.add_argument("--min-games", type=int)
+    parser.add_argument("--max-games", type=int)
     parser.add_argument("--required-teams", nargs="*")
     parser.add_argument("--earliest-date", type=dateutil_parse,
                         default=datetime.datetime.now())
@@ -254,8 +252,10 @@ def main():
 
     # Find all orderings of either 4 or 5 teams
     orderings = []
-    team_names = [t.name for t in TEAMS]
-    for count in range(args.min_games, args.max_games + 1):
+    team_names = args.teams
+    min_games = args.min_games or len(args.teams)
+    max_games = args.max_games or len(args.teams)
+    for count in range(min_games, max_games + 1):
         orderings.extend(sublists(team_names, count))
 
     # Filter to those that include required teams
