@@ -10,6 +10,9 @@ class Team(object):
         self.address = address
         self._short_name = short_name
 
+    def __hash__(self):
+        return hash(self.name)
+
     @property
     def full_name(self):
         return "{} {}".format(self.area, self.name)
@@ -19,6 +22,9 @@ class Team(object):
         if self._short_name is not None:
             return self._short_name
         return self.name.replace(" ", "").lower()
+
+    def __repr__(self):
+        return self.name
 
     def __str__(self):
         return self.full_name
@@ -67,3 +73,5 @@ TEAMS = [
     Team('Arizona', 'Diamondbacks', 'Chase Field', '401 E Jefferson St, Phoenix, AZ 85004', 'National', 'West', 'dbacks'),
     NL_WEST('Colorado', 'Rockies', 'Coors Field', '2001 Blake St, Denver, CO 80205')
 ]
+
+TEAMS_BY_NAME = {t.name: t for t in TEAMS}

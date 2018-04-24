@@ -7,7 +7,7 @@ import json
 import os
 import time
 from sys import stderr
-from teams import TEAMS
+from teams import TEAMS, TEAMS_BY_NAME
 
 import pandas
 import requests
@@ -63,13 +63,7 @@ def load_schedules():
     schedule_dict = {}
 
     for team in TEAMS:
-        schedule_path = os.path.join(
-            'schedules',
-            team.name.replace(' ', '').lower() + '.csv'
-        )
-        if not os.path.exists(schedule_path):
-            print("No schedule for {}".format(team))
-            continue
+        schedule_path = os.path.join('schedules', team.short_name + '.csv')
         team_schedule_df = pandas.read_csv(
             schedule_path, parse_dates=['START DATE'])
         schedule_dict[team.name] = team_schedule_df
@@ -151,7 +145,7 @@ class DateFinder(object):
 
     def find_date(self, team, earliest, latest=None):
         # Default latest date to be one day after the earliest date
-        schedule = self.schedules[team]
+        schedule = self.schedules[team.name]
         # TODO this is slow and dumb
         for idx, date in enumerate(schedule['date']):
             date = date.to_pydatetime()
@@ -251,12 +245,12 @@ def main():
     finder = DateFinder(schedule_dict)
 
     # Find all orderings of either 4 or 5 teams
-    orderings = []
-    team_names = args.teams
+    teams = [TEAMS_BY_NAME[t] for t in args.teams]
     min_games = args.min_games or len(args.teams)
     max_games = args.max_games or len(args.teams)
+    orderings = []
     for count in range(min_games, max_games + 1):
-        orderings.extend(sublists(team_names, count))
+        orderings.extend(sublists(teams, count))
 
     # Filter to those that include required teams
     for t in (args.required_teams or []):
@@ -266,13 +260,16 @@ def main():
     # and Yankees if the ordering contains both.
     for ordering in orderings.copy():
         orderings.append(list(reversed(ordering)))
-        if 'Mets' in ordering and 'Yankees' in ordering:
-            o = ordering.copy()
-            mets_idx, yankees_idx = o.index('Mets'), o.index('Yankees')
-            o[mets_idx] = 'Yankees'
-            o[yankees_idx] = 'Mets'
-            orderings.append(o)
-            orderings.append(list(reversed(o)))
+        # Check for consecutive teams in the same area. For example,
+        # Mets followed by Yankees. When this is found, make a new
+        # list with the positions swapped.
+        for i, team in enumerate(ordering):
+            if i + 1 < len(ordering) and ordering[i + 1].area == team.area:
+                o = ordering.copy()
+                o[i] = ordering[i + 1]
+                o[i + 1] = team
+                orderings.append(o)
+                orderings.append(list(reversed(o)))
 
     # Generate trips for all orderings we determined.
     trips = {
@@ -285,12 +282,12 @@ def main():
     # Display all of the trips.
     for order, events in trips.items():
         if events:
-            print("Dates for {}:".format(" -> ".join(order)))
+            print("Dates for {}:".format(" -> ".join(t.name for t in order)))
             for event_set in events:
                 pretty = {t: "{}, {}".format(e['opponent'], e['date'].strftime("%A %m/%d"))
                           for t, e in event_set.items()}
                 print(pretty)
-                trip_rows.append([None if t.name not in event_set else pretty[t.name]
+                trip_rows.append([None if t not in event_set else pretty[t]
                                   for t in TEAMS])
             print("\n")
 
